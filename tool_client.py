@@ -34,8 +34,7 @@ def tool_window():
     tool.mainloop()
 
 
-# pyinstaller -F tool_client.py -p D:\ATTCommonTool\tool_manage\simple_tiantu_forward.py
-# -p D:\ATTCommonTool\tool_manage\tool_default.py -i D:\ATTCommonTool\tool_picture\dog_icon.ico --noconsole  隐藏控制台窗口
+# pyinstaller -F tool_client.py -p D:\ATTCommonTool\tool_manage\simple_tiantu_forward.py -p D:\ATTCommonTool\tool_manage\tool_default.py -i D:\ATTCommonTool\tool_picture\dog_icon.ico --noconsole  隐藏控制台窗口
 
 # pyinstaller -F tool_client.py -p D:\ATTCommonTool\tool_manage\simple_tiantu_forward.py -p D:\ATTCommonTool\tool_manage\tool_default.py -i D:\ATTCommonTool\tool_picture\dog_icon.ico
 

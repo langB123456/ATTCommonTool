@@ -51,15 +51,15 @@ def get_token(base_url, user, pwd):
 
 
 # 运单数据导出
-def get_data(base_url, token, delivery_no_list=""):
+def get_data(base_url: str, token: str, lade_number_list: str = "", delivery_no_list: str = ""):
     # FIXME 增加实时时间，不然后续无法查询数据
-    now_mouth = int(datetime.now().strftime("%m"))
-    now_year = int(datetime.now().strftime("%Y"))
-    if now_mouth > 2:
-        begin_now_time = datetime.now().strftime(f"%Y-{now_mouth - 1}-%d %H:%M:%S")
-    else:
-        begin_now_time = datetime.now().strftime(f"{now_year - 1}-12-%d %H:%M:%S")
-    last_now_time = datetime.now().strftime("%Y-%m-%d 23:59:59")
+    # FIXME 处理时间格式问题，之前因为 2025-4-08 4的情况需要处理
+    # FIXME 去掉时间区间限制，查询所有数据  datetime: 2025-05-30
+    # FIXME 增加根据提单号导出
+    if lade_number_list != '' and type(lade_number_list) is str:
+        lade_number_list = [lade_number_list]
+    if delivery_no_list != '' and type(delivery_no_list) is str:
+        delivery_no_list = [delivery_no_list]
     url = base_url + "/api/fba-shipment/export_order"
     headers = {"content-type": "application/json", "token": token}
     data = {
@@ -70,8 +70,8 @@ def get_data(base_url, token, delivery_no_list=""):
         "customer_type": "",
         "service_id_list": [],
         "warehouse_code_list": [],
-        "lade_number_list": "",
-        "delivery_no_list": [delivery_no_list],
+        "lade_number_list": lade_number_list,
+        "delivery_no_list": delivery_no_list,
         "receiver_country_code_list": [],
         "declare_type_list": [],
         "customs_type_list": [],
@@ -80,8 +80,6 @@ def get_data(base_url, token, delivery_no_list=""):
         "attr_id_list": [],
         "assistant_user_id_list": [],
         "sale_user_id_list": [],
-        "exception_list": [],
-        "no_exception_list": [],
         "sale_user_name": "",
         "remark": "",
         "inner_remark": "",
@@ -91,10 +89,7 @@ def get_data(base_url, token, delivery_no_list=""):
         "po_number": "",
         "ltd_id_list": [],
         "route_ids": [],
-        "create_time": [
-            begin_now_time,
-            last_now_time
-        ],
+        "create_time": None,
         "picking_time": [],
         "sign_time": [],
         "return_time": [],
@@ -104,11 +99,13 @@ def get_data(base_url, token, delivery_no_list=""):
         "picking_freight_station_list": [],
         "page": 1,
         "limit": 100,
-        "create_start_time": "2025-02-07 00:00:00",
-        "create_end_time": "2025-05-08 23:59:59"
+        "exception_list": [],
+        "no_exception_list": []
     }
+    print(data)
     response = requests.post(url, headers=headers, json=data)
     if response.status_code == 200:
+        print(response.json())
         return
     else:
         raise Exception(response.status_code, response.text)
@@ -220,13 +217,23 @@ def sales_match_group():
                 first_deal_ws.cell(row=i, column=2, value=str(org_ws.cell(row=i, column=1).value))
                 first_deal_ws.cell(row=i, column=3, value=str(org_ws.cell(row=i, column=2).value))
                 first_deal_ws.cell(row=i, column=4, value=str(read_ws.cell(row=j, column=2).value))
+            else:
+                # FIXME 记录不匹配的客户名称
+                first_deal_ws.cell(row=i, column=1, value=str(customer_name))
     org_wb.save(deal_path)
     # 获取唯一的群名称
     simple_sales_name = []
+    # FIXME 获取不匹配客户
+    invalid_customers = []
     for i in range(2, org_row_count + 1):
+        if first_deal_ws.cell(row=i, column=2).value is None or first_deal_ws.cell(row=i, column=2).value == "":
+            invalid_customer = first_deal_ws.cell(row=i, column=1).value
+            invalid_customers.append(invalid_customer)
         deal_sales_name = first_deal_ws.cell(row=i, column=4).value
         simple_sales_name.append(deal_sales_name)
     select_data = skip_all_duplicates(simple_sales_name)
+    # FIXME 获取不匹配客户 去重处理
+    invalid_customers = skip_all_duplicates(invalid_customers)
     second_deal_ws = org_wb.create_sheet('Sheet3')
     head_row = ['客户名称', '运单号', '客户单号', '群聊名称']
     for i in range(len(head_row)):
@@ -244,23 +251,30 @@ def sales_match_group():
                 second_deal_ws.cell(row=k, column=4, value=first_deal_ws.cell(row=j, column=4).value)
     # 整理发送群
     # FIXME 处理数据为空的情况
-    select_data.remove(None)
+    if None in select_data:
+        select_data.remove(None)
     third_deal_ws = org_wb.create_sheet('Sheet4')
-    head_row = ['群聊名称', '发送结果']
+    head_row = ['客户简称', '群聊名称', '发送结果']
     for i in range(len(head_row)):
         third_deal_ws.cell(row=1, column=i + 1, value=head_row[i])
     for i in range(len(select_data)):
         if select_data[i]:
-            third_deal_ws.cell(row=i + 2, column=1, value=select_data[i])
+            third_deal_ws.cell(row=i + 2, column=2, value=select_data[i])
+            # FIXME 处理客户简称查询不到的情况 把客户简称备注在最后处理数据上
+            send_group_name = select_data[i]
+            for j in range(1, row_count + 1):
+                if send_group_name == str(read_ws.cell(row=j, column=2).value):
+                    third_deal_ws.cell(row=i + 2, column=1, value=str(read_ws.cell(row=j, column=1).value))
     org_wb.save(deal_path)
     org_wb.close()
+    return invalid_customers
 
 
 # 天图下载运单文件处理
-def system_download(base_url, user, pwd, delivery_no_list=""):
+def system_download(base_url, user, pwd, lade_number_list="", delivery_no_list=""):
     token = get_token(base_url, user, pwd)
     time.sleep(0.5)
-    get_data(base_url, token, delivery_no_list)
+    get_data(base_url, token, lade_number_list, delivery_no_list)
     time.sleep(3)
     url = get_export_template_id(base_url, token)
     time.sleep(1)
@@ -276,19 +290,16 @@ def system_download(base_url, user, pwd, delivery_no_list=""):
 # 查询发送人信息
 def search_sender(user_name, search_path):
     # 搜索输入框查询
+    # FIXME 使用复制粘贴 发送人名称
+    copy(user_name)
     button_x, button_y = get_photo_position(search_path)
     pyautogui.moveTo(button_x - 60, button_y)
     pyautogui.click()
-    write(user_name)
+    # write(user_name)
+    time.sleep(0.2)
+    press_and_release('ctrl+v')
     time.sleep(1)
     pyautogui.moveTo(button_x + 10, button_y + 70)
-    pyautogui.click()
-
-
-# 点击逐条转发按钮
-def forward_item(file_path):
-    forward_item_x, forward_item_y = get_photo_position(file_path)
-    pyautogui.moveTo(forward_item_x, forward_item_y)
     pyautogui.click()
 
 
@@ -296,14 +307,6 @@ def forward_item(file_path):
 def position_and_move(file_path):
     send_button_x, send_button_y = get_photo_position(file_path)
     pyautogui.moveTo(send_button_x, send_button_y)
-    pyautogui.click()
-
-
-# 发送按钮
-def send_button(file_path):
-    send_button_x, send_button_y = get_photo_position(file_path)
-    # pyautogui.moveTo(send_button_x, send_button_y)
-    pyautogui.moveTo(send_button_x - 150, send_button_y)
     pyautogui.click()
 
 
@@ -344,12 +347,6 @@ def send_file(file_path):
         time.sleep(0.8)
 
 
-# 输入信息
-def send_point(text):
-    write(text)
-    press_and_release('enter')
-
-
 # 处理图片
 def deal_picture(image_path, text_data):
     image = Image.open(image_path)
@@ -373,29 +370,11 @@ def get_window_size():
     return size
 
 
-# 删除图片文件
-def delete_file(image_path):
-    os.remove(image_path)
-    print(f'Deleted {image_path}')
-
-
 # 唤起企业微信
 def wake_up_work_chat():
     ww_window = auto.WindowControl(Name='企业微信', ClassName='WeWorkWindow')
     ww_window.SetFocus()
     ww_window.Maximize(True)
-
-
-# 循环文件夹内文件夹
-def get_folder(main_path):
-    files = os.listdir(main_path)
-    folder_paths = []
-    for file in files:
-        file_path = os.path.join(main_path, file)
-        if os.path.isdir(file_path):
-            folder_paths.append(file_path)
-    # print(folder_paths)
-    return folder_paths
 
 
 # xlrd要调用xlsx，只可以 pip install xlrd==1.1.0
@@ -406,7 +385,7 @@ def new_get_excel_user(excel_path, sheet):
     row_count = worksheet.nrows
     user_names = []
     for row_num in range(1, row_count):
-        user_name = worksheet.cell_value(row_num, 0)
+        user_name = worksheet.cell_value(row_num, 1)
         if user_name is not None:
             user_names.append(user_name)
     return user_names
@@ -436,7 +415,7 @@ def count_time(time_str_1, time_str_2):
 
 
 # 发送结果给群/用户
-def send_result_for_me(user_name, forward_count, success_count, start_time, end_time):
+def send_result_for_me(user_name, forward_count, success_count, start_time, end_time, invalid_customers, fail_customers):
     days, hours, minutes, seconds = count_time(start_time, end_time)
     # 搜索输入框查询
     search_x, search_y = get_photo_position('D:\\group_send\\picture_manage\\search_right_button.png')
@@ -448,12 +427,13 @@ def send_result_for_me(user_name, forward_count, success_count, start_time, end_
     pyautogui.moveTo(search_x + 70, search_y + 70)
     pyautogui.click()
     time.sleep(1)
+    text = f'需转发群数量：{forward_count}\n发送成功：{success_count}\n耗时详细：{hours}:{minutes}:{seconds}'
+    # FIXME 增加查询无果提示
     if forward_count - success_count > 0:
-        text = (f'需转发群数量：{forward_count}\n发送成功：{success_count}\n发送失败：{forward_count - success_count}\n'
-                f'失败原因：当前企微无法查到该用户,请维护正确的群名称\n耗时详细：{hours}:{minutes}:{seconds}')
-    else:
-        text = (f'需转发群数量：{forward_count}\n发送成功：{success_count}\n发送失败：{forward_count - success_count}\n'
-                f'耗时详细：{hours}:{minutes}:{seconds}')
+        text = "".join([text, f'\n未维护客户数：{forward_count - success_count}\n未维护客户：{",".join(fail_customers)}'])
+    # FIXME 增加不匹配客户的提示
+    if len(invalid_customers) > 0:
+        text = "".join([text, f'\n未匹配数：{len(invalid_customers)}\n未匹配的客户：{",".join(invalid_customers)}'])
     copy(text)
     time.sleep(0.5)
     press_and_release('ctrl+v')
@@ -486,7 +466,7 @@ def get_customer_and_shipment(group_name):
 
 # FIXME 记录 查询不到数据
 # 主流程 def main_use_flow(event):
-def new_main_use_flow(result_send):
+def new_main_use_flow(result_send, invalid_customers):
     try:
         start_time = time.asctime(time.localtime(time.time()))
         wake_up_work_chat()
@@ -499,10 +479,10 @@ def new_main_use_flow(result_send):
             if user_name == '' or user_name is None:
                 continue
             search_sender(user_name, 'D:\\group_send\\picture_manage\\search_right_button.png')
-            time.sleep(1.2)
+            time.sleep(1.5)
             if get_photo_position("D:\\group_send\\picture_manage\\all_select_box.png") is not None:
-                if ws.cell(i + 2, 2).value == '' or ws.cell(i + 2, 2).value is None:
-                    ws.cell(row=i + 2, column=2, value='未找到用户或群聊')
+                if ws.cell(i + 2, 3).value == '' or ws.cell(i + 2, 3).value is None:
+                    ws.cell(row=i + 2, column=3, value='未找到用户或群聊')
                 wb.save(deal_excel)
                 continue
             # 发送文本信息
@@ -519,18 +499,23 @@ def new_main_use_flow(result_send):
         # 发送结果
         forward_count = get_max_row(ws)
         success_count = 0
+        # 查询失败数
+        fail_customers = []
         for row in range(2, forward_count + 1):
-            if ws.cell(row, 2).value == '' or ws.cell(row, 2).value is None:
+            if ws.cell(row, 3).value == '' or ws.cell(row, 3).value is None:
                 success_count += 1
-                ws.cell(row=row, column=2, value='已发送')
+                ws.cell(row=row, column=3, value='已发送')
+            else:
+                fail_customers.append(ws.cell(row=row, column=1).value)
         wb.save(deal_excel)
         time.sleep(0.5)
-        send_result_for_me(result_send, forward_count - 1, success_count, start_time, end_time)
+        print(fail_customers)
+        send_result_for_me(result_send, forward_count - 1, success_count, start_time, end_time, invalid_customers, fail_customers)
     except Exception as e:
         print(e)
 
 
-def cs_forward_main(base_url, user, pwd, delivery_no_list, result_send):
+def cs_forward_main(base_url, user, pwd, lade_number_list, delivery_no_list, result_send):
     # 设置 Tesseract 的路径(仅在必要时，视你的安装情况而定)
     pytesseract.pytesseract.tesseract_cmd = r'D:\group_send\Tesseract-OCR\tesseract.exe'
     # pyautogui禁用故障保护
@@ -545,15 +530,17 @@ def cs_forward_main(base_url, user, pwd, delivery_no_list, result_send):
         for file in files:
             if '运单导出' in file.split('\\')[-1]:
                 os.remove(file)
+    if len(delivery_no_list.split(' ')) > 1:
+        delivery_no_list = delivery_no_list.split(' ')
+    if len(lade_number_list.split(' ')) > 1:
+        lade_number_list = lade_number_list.split(' ')
     now_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     out_time = "2025-08-09 00:00:00"
     if now_time < out_time:
-        if len(delivery_no_list.split(' ')) > 1:
-            delivery_no_list = delivery_no_list.split(' ')
-        system_download(base_url, user, pwd, delivery_no_list)
-        sales_match_group()
+        system_download(base_url, user, pwd, lade_number_list, delivery_no_list)
+        invalid_customers = sales_match_group()
         time.sleep(1)
-        new_main_use_flow(result_send)
+        new_main_use_flow(result_send, invalid_customers)
 
 
 # 客户端 工具页
@@ -590,16 +577,17 @@ def tool_tiantu_simple_cs_window(tool):
     e5 = tk.Entry(tool_use_page, width=30, relief='groove')
     e5.place(x=100, y=88)
 
+    d6 = tk.Label(tool_use_page, text='提单号', background='white')
+    d6.place(x=0, y=105)
+
+    e6 = tk.Entry(tool_use_page, width=30, relief='groove')
+    e6.place(x=100, y=105)
+
     d4 = tk.Label(tool_use_page, text='接收结果人', background='white')
-    d4.place(x=0, y=105)
+    d4.place(x=0, y=126)
 
     e4 = tk.Entry(tool_use_page, width=30, relief='groove')
-    e4.place(x=100, y=105)
-
-    # e1.insert(0, 'https://fba.tttxex.com/')
-    # e2.insert(0, 'admin')
-    # e3.insert(0, '123456')
-    # e4.insert(0, '天光')
+    e4.place(x=100, y=126)
 
     def clear():
         e1.delete(0, 'end')
@@ -611,25 +599,16 @@ def tool_tiantu_simple_cs_window(tool):
     implement_button = tk.Button(tool_use_page,
                                  text='执行',
                                  background='#AFEEEE',
-                                 command=lambda: cs_forward_main(e1.get(), e2.get(), e3.get(), e5.get(), e4.get())
+                                 command=lambda: cs_forward_main(e1.get(), e2.get(), e3.get(), e6.get(), e5.get(), e4.get())
                                  )
-    implement_button.place(x=2, y=126)
+    implement_button.place(x=2, y=148)
 
     clear_button = tk.Button(tool_use_page,
                              text='清空',
                              background='#AFEEEE',
                              command=clear)
-    clear_button.place(x=40, y=126)
+    clear_button.place(x=40, y=148)
 
     # 模块位置
     tool_use_page.place(x=220, y=20)
     return tool_use_page
-
-
-if __name__ == '__main__':
-    base_url = "https://fba.tttxex.com/"
-    user = "admin"
-    pwd = "rCaVObz/sHF3P60+STfZgg=="
-    delivery_no_list = "CH000011744"
-    result_send = "天光"
-    cs_forward_main(base_url, user, pwd, delivery_no_list, result_send)
